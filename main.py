@@ -1,5 +1,6 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
+import os
 
 app = Flask(__name__)
 
@@ -7,6 +8,10 @@ CAL_API_KEY = "cal_live_c3cf5c23f7fbb2d821357daff52c448c"
 EVENT_TYPE_ID = 5222644
 
 CAL_API_URL = "https://api.cal.com/v1/bookings"
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Server is running", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -43,4 +48,5 @@ def webhook():
     }
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    port = int(os.environ.get("PORT", 3000))
+    app.run(host="0.0.0.0", port=port)
