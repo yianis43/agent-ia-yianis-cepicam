@@ -4,8 +4,9 @@ from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+# Variables Railway
+GOOGLE_CLIENT_ID = os.getenv("CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("REFRESH_TOKEN")
 
 def get_access_token():
@@ -21,9 +22,11 @@ def get_access_token():
     token_data = response.json()
 
     if "access_token" not in token_data:
+        print("Erreur Google:", token_data)
         raise Exception("Impossible d'obtenir un access_token")
 
     return token_data["access_token"]
+
 
 @app.post("/create_event")
 def create_event(event: dict):
@@ -37,7 +40,8 @@ def create_event(event: dict):
 
     response = requests.post(url, headers=headers, json=event)
 
-    if response.status_code != 200:
+    if response.status_code not in [200, 201]:
+        print("Erreur Google Calendar:", response.text)
         raise HTTPException(status_code=400, detail=response.json())
 
     return response.json()
