@@ -1,52 +1,69 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, redirect
 import requests
+import urllib.parse
 import os
 
 app = Flask(__name__)
 
-CAL_API_KEY = "cal_live_c3cf5c23f7fbb2d821357daff52c448c"
-EVENT_TYPE_ID = 5222644
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 
-CAL_API_URL = "https://api.cal.com/v1/bookings"
+# 1) Lancer l'auth Google
+@app.route("/auth")
+def auth():
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/calendar.events",
+        "access_type": "offline",
+        "prompt": "consent"
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return redirect(url)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Server is running", 200
+# 2) Callback OAuth → récupère access_token + refresh_token
+@app.route("/oauth2callback")
+def callback():
+    code = request.args.get("code")
+    token_url = "https://oauth2.googleapis.com/token"
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.json
-
-    nom = data.get("nom")
-    email = data.get("email")
-    date = data.get("date")
-    heure = data.get("heure")
-
-    if not all([nom, email, date, heure]):
-        return {"error": "Missing required fields"}, 400
-
-    start = f"{date}T{heure}:00Z"
-
-    payload = {
-        "eventTypeId": EVENT_TYPE_ID,
-        "start": start,
-        "name": nom,
-        "email": email,
-        "notes": "Rendez-vous créé automatiquement par l’agent IA Yianis"
+    data = {
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
     }
 
-    headers = {
-        "Authorization": f"Bearer {CAL_API_KEY}",
-        "Content-Type": "application/json"
+    r = requests.post(token_url, data=data)
+    return r.json()
+
+# 3) Endpoint pour créer un événement Google Calendar
+@app.route("/create_event", methods=["POST"])
+def create_event():
+    access_token = request.json.get("access_token")
+
+    event = {
+        "summary": request.json.get("summary"),
+        "start": {
+            "dateTime": request.json.get("start"),
+            "timeZone": "Europe/Brussels"
+        },
+        "end": {
+            "dateTime": request.json.get("end"),
+            "timeZone": "Europe/Brussels"
+        }
     }
 
-    response = requests.post(CAL_API_URL, json=payload, headers=headers)
+    r = requests.post(
+        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json=event
+    )
 
-    return {
-        "status": "ok",
-        "cal_response": response.json()
-    }
+    return r.json()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 3000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=8080)
