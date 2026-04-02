@@ -1,69 +1,43 @@
-from flask import Flask, request, redirect
-import requests
-import urllib.parse
 import os
+import requests
+from fastapi import FastAPI, HTTPException
 
-app = Flask(__name__)
+app = FastAPI()
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REFRESH_TOKEN = os.getenv("REFRESH_TOKEN")
 
-# 1) Lancer l'auth Google
-@app.route("/auth")
-def auth():
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": "https://www.googleapis.com/auth/calendar.events",
-        "access_type": "offline",
-        "prompt": "consent"
-    }
-    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
-    return redirect(url)
-
-# 2) Callback OAuth → récupère access_token + refresh_token
-@app.route("/oauth2callback")
-def callback():
-    code = request.args.get("code")
-    token_url = "https://oauth2.googleapis.com/token"
-
+def get_access_token():
+    url = "https://oauth2.googleapis.com/token"
     data = {
-        "code": code,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code"
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "refresh_token": REFRESH_TOKEN,
+        "grant_type": "refresh_token"
     }
 
-    r = requests.post(token_url, data=data)
-    return r.json()
+    response = requests.post(url, data=data)
+    token_data = response.json()
 
-# 3) Endpoint pour créer un événement Google Calendar
-@app.route("/create_event", methods=["POST"])
-def create_event():
-    access_token = request.json.get("access_token")
+    if "access_token" not in token_data:
+        raise Exception("Impossible d'obtenir un access_token")
 
-    event = {
-        "summary": request.json.get("summary"),
-        "start": {
-            "dateTime": request.json.get("start"),
-            "timeZone": "Europe/Brussels"
-        },
-        "end": {
-            "dateTime": request.json.get("end"),
-            "timeZone": "Europe/Brussels"
-        }
+    return token_data["access_token"]
+
+@app.post("/create_event")
+def create_event(event: dict):
+    access_token = get_access_token()
+
+    url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
     }
 
-    r = requests.post(
-        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-        headers={"Authorization": f"Bearer {access_token}"},
-        json=event
-    )
+    response = requests.post(url, headers=headers, json=event)
 
-    return r.json()
+    if response.status_code != 200:
+        raise HTTPException(status_code=400, detail=response.json())
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    return response.json()
